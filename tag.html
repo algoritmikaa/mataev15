@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Теннис на двоих (с ускорением)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        .game-container {
+            background: #222;
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 0 30px rgba(0, 150, 255, 0.3);
+        }
+        canvas {
+            display: block;
+            background: #1a1a2e;
+            border: 2px solid #00aaff;
+            border-radius: 12px;
+            width: 800px;
+            height: 500px;
+            max-width: 100%;
+            height: auto;
+            aspect-ratio: 800 / 500;
+        }
+        .info {
+            display: flex;
+            justify-content: space-between;
+            color: #eee;
+            margin-top: 12px;
+            font-size: 18px;
+            padding: 0 10px;
+        }
+        .info span {
+            background: #333;
+            padding: 6px 16px;
+            border-radius: 8px;
+            border: 1px solid #00aaff;
+        }
+        .controls {
+            color: #aaa;
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .controls kbd {
+            background: #333;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            color: #fff;
+        }
+        @media (max-width: 820px) {
+            canvas {
+                width: 100%;
+                height: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+    <div class="info">
+        <span>🏓 Игрок 1: <span id="score1">0</span></span>
+        <span>🏓 Игрок 2: <span id="score2">0</span></span>
+    </div>
+    <div class="controls">
+        <kbd>W</kbd> / <kbd>S</kbd> — левая ракетка &nbsp;|&nbsp; <kbd>↑</kbd> / <kbd>↓</kbd> — правая ракетка &nbsp;|&nbsp; <kbd>M</kbd> — ИИ (вкл/выкл) &nbsp;|&nbsp; <kbd>R</kbd> — сброс счёта
+    </div>
+</div>
+
+<script>
+    (function() {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const score1Span = document.getElementById('score1');
+        const score2Span = document.getElementById('score2');
+
+        const W = 800, H = 500;
+
+        // Ракетки
+        const PADDLE_WIDTH = 12;
+        const PADDLE_HEIGHT = 100;
+        const PADDLE_SPEED = 6;
+
+        // Мяч — ускорение усилено
+        const BALL_SIZE = 14;
+        const BALL_SPEED_INITIAL = 5;
+        const BALL_SPEED_INCREMENT = 0.8;   // было 0.5
+        const MAX_BALL_SPEED = 15;          // было 12
+
+        let player1 = { x: 20, y: H/2 - PADDLE_HEIGHT/2, w: PADDLE_WIDTH, h: PADDLE_HEIGHT, score: 0 };
+        let player2 = { x: W - 20 - PADDLE_WIDTH, y: H/2 - PADDLE_HEIGHT/2, w: PADDLE_WIDTH, h: PADDLE_HEIGHT, score: 0 };
+        let ball = {
+            x: W/2 - BALL_SIZE/2,
+            y: H/2 - BALL_SIZE/2,
+            w: BALL_SIZE,
+            h: BALL_SIZE,
+            dx: BALL_SPEED_INITIAL * (Math.random() > 0.5 ? 1 : -1),
+            dy: (Math.random() * 2 - 1) * BALL_SPEED_INITIAL * 0.6
+        };
+
+        let keys = { w: false, s: false, arrowup: false, arrowdown: false };
+
+        // ПО УМОЛЧАНИЮ — РЕЖИМ ДВОИХ (twoPlayerMode = true)
+        let twoPlayerMode = true;
+
+        const AI_SPEED = 4.5;
+        let scoring = false;
+
+        function resetBall(direction) {
+            ball.x = W/2 - BALL_SIZE/2;
+            ball.y = H/2 - BALL_SIZE/2;
+            // Скорость при сбросе — начальная, независимо от накопленной
+            const speed = BALL_SPEED_INITIAL;
+            const angle = (Math.random() * 0.8 - 0.4);
+            ball.dx = direction * speed * Math.cos(angle);
+            ball.dy = speed * Math.sin(angle);
+            scoring = false;
+        }
+
+        function updateScoreDisplay() {
+            score1Span.textContent = player1.score;
+            score2Span.textContent = player2.score;
+        }
+
+        function checkCollisions() {
+            // Стены
+            if (ball.y <= 0 || ball.y + ball.h >= H) {
+                ball.dy = -ball.dy;
+                if (ball.y <= 0) ball.y = 0;
+                if (ball.y + ball.h >= H) ball.y = H - ball.h;
+            }
+
+            // Левая ракетка (игрок 1)
+            if (ball.dx < 0 &&
+                ball.x <= player1.x + player1.w &&
+                ball.x + ball.w >= player1.x &&
+                ball.y + ball.h > player1.y &&
+                ball.y < player1.y + player1.h) {
+                ball.dx = -ball.dx;
+                const speed = Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy) + BALL_SPEED_INCREMENT;
+                const angle = (ball.y + ball.h/2 - (player1.y + player1.h/2)) / (player1.h/2) * 0.6;
+                ball.dx = speed * Math.cos(angle) * (ball.dx > 0 ? 1 : -1);
+                ball.dy = speed * Math.sin(angle);
+                // Ограничение максимальной скорости
+                const currentSpeed = Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy);
+                if (currentSpeed > MAX_BALL_SPEED) {
+                    ball.dx = ball.dx / currentSpeed * MAX_BALL_SPEED;
+                    ball.dy = ball.dy / currentSpeed * MAX_BALL_SPEED;
+                }
+                ball.x = player1.x + player1.w;
+            }
+
+            // Правая ракетка (игрок 2)
+            if (ball.dx > 0 &&
+                ball.x + ball.w >= player2.x &&
+                ball.x <= player2.x + player2.w &&
+                ball.y + ball.h > player2.y &&
+                ball.y < player2.y + player2.h) {
+                ball.dx = -ball.dx;
+                const speed = Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy) + BALL_SPEED_INCREMENT;
+                const angle = (ball.y + ball.h/2 - (player2.y + player2.h/2)) / (player2.h/2) * 0.6;
+                ball.dx = speed * Math.cos(angle) * (ball.dx > 0 ? 1 : -1);
+                ball.dy = speed * Math.sin(angle);
+                const currentSpeed = Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy);
+                if (currentSpeed > MAX_BALL_SPEED) {
+                    ball.dx = ball.dx / currentSpeed * MAX_BALL_SPEED;
+                    ball.dy = ball.dy / currentSpeed * MAX_BALL_SPEED;
+                }
+                ball.x = player2.x - ball.w;
+            }
+
+            // Голы
+            if (ball.x + ball.w < 0) {
+                if (!scoring) {
+                    player2.score++;
+                    updateScoreDisplay();
+                    scoring = true;
+                    resetBall(1);
+                }
+            }
+            if (ball.x > W) {
+                if (!scoring) {
+                    player1.score++;
+                    updateScoreDisplay();
+                    scoring = true;
+                    resetBall(-1);
+                }
+            }
+        }
+
+        function movePaddles() {
+            // Игрок 1 (W/S)
+            if (keys.w && player1.y > 0) player1.y -= PADDLE_SPEED;
+            if (keys.s && player1.y + player1.h < H) player1.y += PADDLE_SPEED;
+
+            // Игрок 2: либо стрелки, либо ИИ
+            if (twoPlayerMode) {
+                if (keys.arrowup && player2.y > 0) player2.y -= PADDLE_SPEED;
+                if (keys.arrowdown && player2.y + player2.h < H) player2.y += PADDLE_SPEED;
+            } else {
+                const centerY = player2.y + player2.h/2;
+                const ballCenterY = ball.y + ball.h/2;
+                const diff = ballCenterY - centerY;
+                if (Math.abs(diff) > 8) {
+                    if (diff > 0 && player2.y + player2.h < H) player2.y += AI_SPEED;
+                    else if (diff < 0 && player2.y > 0) player2.y -= AI_SPEED;
+                }
+                if (player2.y < 0) player2.y = 0;
+                if (player2.y + player2.h > H) player2.y = H - player2.h;
+            }
+        }
+
+        function updateBall() {
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+
+            // Центральная линия и круг
+            ctx.strokeStyle = '#00aaff';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 15]);
+            ctx.beginPath();
+            ctx.moveTo(W/2, 0);
+            ctx.lineTo(W/2, H);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.arc(W/2, H/2, 60, 0, 2 * Math.PI);
+            ctx.strokeStyle = '#00aaff';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Ракетки
+            ctx.fillStyle = '#ff4d4d';
+            ctx.shadowColor = '#ff4d4d';
+            ctx.shadowBlur = 12;
+            ctx.fillRect(player1.x, player1.y, player1.w, player1.h);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#4da6ff';
+            ctx.shadowColor = '#4da6ff';
+            ctx.shadowBlur = 12;
+            ctx.fillRect(player2.x, player2.y, player2.w, player2.h);
+            ctx.shadowBlur = 0;
+
+            // Мяч
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = '#ffffff';
+            ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.arc(ball.x + ball.w/2, ball.y + ball.h/2, ball.w/2, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Счёт на поле
+            ctx.font = 'bold 60px Arial';
+            ctx.fillStyle = 'rgba(255,255,255,0.05)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(player1.score, W/2 - 80, 70);
+            ctx.fillText(player2.score, W/2 + 80, 70);
+        }
+
+        function gameLoop() {
+            movePaddles();
+            updateBall();
+            checkCollisions();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Управление клавишами
+        document.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'w') { keys.w = true; e.preventDefault(); }
+            else if (key === 's') { keys.s = true; e.preventDefault(); }
+            else if (key === 'arrowup') { keys.arrowup = true; e.preventDefault(); }
+            else if (key === 'arrowdown') { keys.arrowdown = true; e.preventDefault(); }
+            else if (key === 'm') {
+                twoPlayerMode = !twoPlayerMode;
+                keys.arrowup = false;
+                keys.arrowdown = false;
+                e.preventDefault();
+            }
+            else if (key === 'r') {
+                player1.score = 0;
+                player2.score = 0;
+                updateScoreDisplay();
+                resetBall(1);
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'w') { keys.w = false; e.preventDefault(); }
+            else if (key === 's') { keys.s = false; e.preventDefault(); }
+            else if (key === 'arrowup') { keys.arrowup = false; e.preventDefault(); }
+            else if (key === 'arrowdown') { keys.arrowdown = false; e.preventDefault(); }
+        });
+
+        // Старт
+        resetBall(1);
+        updateScoreDisplay();
+        gameLoop();
+
+        console.log('🎾 Теннис на двоих! Управление: W/S и стрелки. Мяч ускоряется с каждым ударом.');
+        console.log('Нажмите M для переключения ИИ, R для сброса счёта.');
+    })();
+</script>
+</body>
+</html>
