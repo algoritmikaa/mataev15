@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Гонки по кругу на двоих</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: radial-gradient(circle at center, #1e3c2f 0%, #0a1f14 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      padding: 15px;
+    }
+    .game-wrapper {
+      background: #0d1b12;
+      border-radius: 30px;
+      padding: 18px 18px 20px;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.7), 0 0 0 5px #4a6741;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      max-width: 500px;
+      height: auto;
+      border-radius: 50%;
+      box-shadow: 0 0 30px rgba(0,255,100,0.3), inset 0 0 30px #000;
+      background: #1a3022;
+    }
+    .info-panel {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 18px;
+      color: white;
+      font-weight: bold;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+    .player-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #1f3325;
+      padding: 10px 18px;
+      border-radius: 40px;
+      box-shadow: 0 4px 0 #0a130c;
+    }
+    .badge-red {
+      border-left: 8px solid #e63946;
+      color: #ffb3b3;
+    }
+    .badge-blue {
+      border-left: 8px solid #457b9d;
+      color: #b3d9ff;
+    }
+    .lap-counter {
+      font-size: 1.6rem;
+      background: #f4c542;
+      color: #1a1a2e;
+      padding: 5px 20px;
+      border-radius: 30px;
+      font-weight: bold;
+      box-shadow: 0 4px 0 #b68b2c;
+    }
+    button {
+      background: #f4a261;
+      border: none;
+      color: #1e1e2f;
+      font-weight: bold;
+      font-size: 1.1rem;
+      padding: 12px 28px;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 4px 0 #b85d19;
+      transition: 0.2s;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      background: #e9c46a;
+    }
+    button:active {
+      transform: translateY(3px);
+      box-shadow: 0 1px 0 #b85d19;
+    }
+    .controls-text {
+      color: #aaa;
+      font-size: 0.8rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-top: 6px;
+    }
+    @media (max-width: 500px) {
+      .info-panel {
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+  </style>
+</head>
+<body>
+<div style="display: flex; flex-direction: column; align-items: center;">
+  <div class="game-wrapper">
+    <canvas id="raceCanvas" width="480" height="480" style="border-radius: 50%;"></canvas>
+    <div class="info-panel">
+      <div class="player-badge badge-red">
+        <span>🔴 Игрок 1</span>
+        <span class="lap-counter" id="p1Laps">0</span>
+      </div>
+      <button id="restartButton">🔄 Рестарт</button>
+      <div class="player-badge badge-blue">
+        <span>🔵 Игрок 2</span>
+        <span class="lap-counter" id="p2Laps">0</span>
+      </div>
+    </div>
+    <div class="controls-text">
+      <span>🔴 Игрок 1: W A S D</span>
+      <span>🔵 Игрок 2: СТРЕЛКИ</span>
+      <span>🏁 5 кругов для победы</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    const canvas = document.getElementById('raceCanvas');
+    const ctx = canvas.getContext('2d');
+    const p1LapSpan = document.getElementById('p1Laps');
+    const p2LapSpan = document.getElementById('p2Laps');
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const CENTER_X = W / 2;
+    const CENTER_Y = H / 2;
+
+    // Параметры кольцевой трассы
+    const OUTER_RADIUS = 210;
+    const INNER_RADIUS = 120;
+    const TRACK_WIDTH = OUTER_RADIUS - INNER_RADIUS;
+
+    const CAR_WIDTH = 24;
+    const CAR_HEIGHT = 38;
+
+    // Игрок 1 (красный) - стартует справа, едет вверх (против часовой)
+    let player1 = {
+      angle: -Math.PI / 2,  // носом вверх
+      x: CENTER_X + (INNER_RADIUS + TRACK_WIDTH/2),
+      y: CENTER_Y,
+      speed: 0,
+      maxSpeed: 3.2,
+      acceleration: 0.12,
+      friction: 0.06,
+      turnSpeed: 0.045,
+      color: '#e63946',
+      laps: 0,
+      checkpointPassed: false,
+      active: true
+    };
+
+    // Игрок 2 (синий) - стартует слева, едет вниз (против часовой)
+    let player2 = {
+      angle: Math.PI / 2,   // носом вниз
+      x: CENTER_X - (INNER_RADIUS + TRACK_WIDTH/2),
+      y: CENTER_Y,
+      speed: 0,
+      maxSpeed: 3.2,
+      acceleration: 0.12,
+      friction: 0.06,
+      turnSpeed: 0.045,
+      color: '#457b9d',
+      laps: 0,
+      checkpointPassed: false,
+      active: true
+    };
+
+    // Управление
+    const keys = {
+      w: false, a: false, s: false, d: false,
+      ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false
+    };
+
+    let gameActive = true;
+    let winnerMessage = '';
+    const TOTAL_LAPS = 5;
+    let animationId = null;
+
+    function getTrackMiddleRadius() {
+      return INNER_RADIUS + TRACK_WIDTH / 2;
+    }
+
+    function clampToTrack(player) {
+      const dist = Math.sqrt((player.x - CENTER_X) ** 2 + (player.y - CENTER_Y) ** 2);
+      const minR = INNER_RADIUS + 6;
+      const maxR = OUTER_RADIUS - 6;
+
+      if (dist < minR || dist > maxR) {
+        let targetR = Math.max(minR, Math.min(maxR, dist));
+        const angleToCenter = Math.atan2(player.y - CENTER_Y, player.x - CENTER_X);
+        player.x = CENTER_X + Math.cos(angleToCenter) * targetR;
+        player.y = CENTER_Y + Math.sin(angleToCenter) * targetR;
+        player.speed *= 0.5;
+      }
+    }
+
+    function updatePosition(player) {
+      player.x += Math.cos(player.angle) * player.speed;
+      player.y += Math.sin(player.angle) * player.speed;
+    }
+
+    function checkLapFinish(player, playerNumber) {
+      if (!gameActive) return;
+
+      const angle = Math.atan2(player.y - CENTER_Y, player.x - CENTER_X);
+      let normAngle = (angle + Math.PI * 2) % (Math.PI * 2);
+
+      // Финишная черта на угле PI/2 (верхняя точка круга)
+      const finishAngle = Math.PI / 2;
+      const finishZone = 0.35;
+      
+      // Проверяем, находится ли игрок в зоне финиша
+      let diff = Math.abs(normAngle - finishAngle);
+      if (diff > Math.PI) diff = Math.PI * 2 - diff;
+      const inFinishZone = diff < finishZone;
+
+      if (inFinishZone && !player.checkpointPassed) {
+        player.checkpointPassed = true;
+        player.laps++;
+        if (playerNumber === 1) {
+          p1LapSpan.textContent = player.laps;
+        } else {
+          p2LapSpan.textContent = player.laps;
+        }
+
+        if (player.laps >= TOTAL_LAPS) {
+          gameActive = false;
+          winnerMessage = playerNumber === 1 ? '🔴 Игрок 1 победил!' : '🔵 Игрок 2 победил!';
+        }
+      } else if (!inFinishZone) {
+        player.checkpointPassed = false;
+      }
+    }
+
+    function handleInput(player, up, down, left, right) {
+      if (!gameActive) return;
+
+      if (up) {
+        player.speed += player.acceleration;
+        if (player.speed > player.maxSpeed) player.speed = player.maxSpeed;
+      }
+      if (down) {
+        player.speed -= player.acceleration;
+        if (player.speed < -player.maxSpeed * 0.6) player.speed = -player.maxSpeed * 0.6;
+      }
+
+      if (!up && !down) {
+        if (player.speed > 0) {
+          player.speed -= player.friction;
+          if (player.speed < 0) player.speed = 0;
+        } else if (player.speed < 0) {
+          player.speed += player.friction;
+          if (player.speed > 0) player.speed = 0;
+        }
+      }
+
+      // ПОВОРОТ ИСПРАВЛЕН: теперь правильно относительно движения по кругу
+      if (left) {
+        // Поворачиваем налево относительно текущего направления
+        player.angle -= player.turnSpeed;
+      }
+      if (right) {
+        // Поворачиваем направо относительно текущего направления
+        player.angle += player.turnSpeed;
+      }
+    }
+
+    function handleCollision(p1, p2) {
+      const dx = p1.x - p2.x;
+      const dy = p1.y - p2.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = CAR_WIDTH + 4;
+
+      if (dist < minDist && dist > 0.001) {
+        const angle = Math.atan2(dy, dx);
+        const overlap = minDist - dist;
+        const moveX = Math.cos(angle) * (overlap / 2);
+        const moveY = Math.sin(angle) * (overlap / 2);
+
+        p1.x += moveX;
+        p1.y += moveY;
+        p2.x -= moveX;
+        p2.y -= moveY;
+
+        const tempSpeed1 = p1.speed * 0.7;
+        const tempSpeed2 = p2.speed * 0.7;
+        p1.speed = tempSpeed2 * 0.6;
+        p2.speed = tempSpeed1 * 0.6;
+      }
+    }
+
+    function update() {
+      if (!gameActive) return;
+
+      handleInput(player1, keys.w, keys.s, keys.a, keys.d);
+      handleInput(player2, keys.ArrowUp, keys.ArrowDown, keys.ArrowLeft, keys.ArrowRight);
+
+      updatePosition(player1);
+      updatePosition(player2);
+
+      clampToTrack(player1);
+      clampToTrack(player2);
+
+      handleCollision(player1, player2);
+
+      checkLapFinish(player1, 1);
+      checkLapFinish(player2, 2);
+    }
+
+    function drawTrack() {
+      ctx.clearRect(0, 0, W, H);
+
+      // Газон
+      ctx.fillStyle = '#2d5a27';
+      ctx.beginPath();
+      ctx.arc(CENTER_X, CENTER_Y, W/2, 0, Math.PI*2);
+      ctx.fill();
+
+      // Внешняя граница
+      ctx.beginPath();
+      ctx.arc(CENTER_X, CENTER_Y, OUTER_RADIUS, 0, Math.PI*2);
+      ctx.strokeStyle = '#f4f4f4';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      // Внутренняя граница
+      ctx.beginPath();
+      ctx.arc(CENTER_X, CENTER_Y, INNER_RADIUS, 0, Math.PI*2);
+      ctx.strokeStyle = '#f4f4f4';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      // Асфальт
+      ctx.beginPath();
+      ctx.arc(CENTER_X, CENTER_Y, OUTER_RADIUS-3, 0, Math.PI*2);
+      ctx.arc(CENTER_X, CENTER_Y, INNER_RADIUS+3, 0, Math.PI*2, true);
+      ctx.fillStyle = '#3a3a3a';
+      ctx.fill();
+
+      // Разметка по середине трассы
+      const midR = getTrackMiddleRadius();
+      ctx.beginPath();
+      ctx.setLineDash([15, 20]);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.arc(CENTER_X, CENTER_Y, midR, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Финишная черта (наверху, угол PI/2)
+      const finishAngle = Math.PI / 2;
+      const fx1 = CENTER_X + Math.cos(finishAngle) * (INNER_RADIUS+4);
+      const fy1 = CENTER_Y + Math.sin(finishAngle) * (INNER_RADIUS+4);
+      const fx2 = CENTER_X + Math.cos(finishAngle) * (OUTER_RADIUS-4);
+      const fy2 = CENTER_Y + Math.sin(finishAngle) * (OUTER_RADIUS-4);
+
+      ctx.beginPath();
+      ctx.moveTo(fx1, fy1);
+      ctx.lineTo(fx2, fy2);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 7;
+      ctx.stroke();
+
+      for (let i = 0; i < 8; i++) {
+        const t = i / 8;
+        const x = fx1 + (fx2 - fx1) * t;
+        const y = fy1 + (fy2 - fy1) * t;
+        ctx.fillStyle = i % 2 === 0 ? '#000' : '#fff';
+        ctx.fillRect(x-3, y-3, 6, 6);
+      }
+    }
+
+    function drawCar(player, isPlayer1) {
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.rotate(player.angle);
+
+      // Кузов
+      ctx.fillStyle = player.color;
+      ctx.shadowColor = 'rgba(0,0,0,0.7)';
+      ctx.shadowBlur = 8;
+      ctx.fillRect(-CAR_WIDTH/2, -CAR_HEIGHT/2, CAR_WIDTH, CAR_HEIGHT);
+      ctx.shadowBlur = 0;
+
+      // Окна
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(-CAR_WIDTH/2 + 4, -CAR_HEIGHT/2 + 6, CAR_WIDTH-8, 10);
+      ctx.fillRect(-CAR_WIDTH/2 + 4, CAR_HEIGHT/2 - 16, CAR_WIDTH-8, 10);
+
+      // Фары (спереди)
+      ctx.fillStyle = '#f4e04d';
+      ctx.fillRect(-CAR_WIDTH/2 + 3, -CAR_HEIGHT/2 - 2, 7, 6);
+      ctx.fillRect(CAR_WIDTH/2 - 10, -CAR_HEIGHT/2 - 2, 7, 6);
+
+      // Задние фонари
+      ctx.fillStyle = '#ff4444';
+      ctx.fillRect(-CAR_WIDTH/2 + 3, CAR_HEIGHT/2 - 4, 7, 6);
+      ctx.fillRect(CAR_WIDTH/2 - 10, CAR_HEIGHT/2 - 4, 7, 6);
+
+      // Номер игрока
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 14px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(isPlayer1 ? '1' : '2', 0, 4);
+
+      ctx.restore();
+    }
+
+    function drawUI() {
+      if (!gameActive && winnerMessage) {
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = '#0a0a14';
+        ctx.beginPath();
+        ctx.arc(CENTER_X, CENTER_Y, 140, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        ctx.fillStyle = '#f4c542';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(winnerMessage, CENTER_X, CENTER_Y-10);
+        ctx.font = '16px Arial';
+        ctx.fillText('Нажми Рестарт', CENTER_X, CENTER_Y+30);
+      }
+
+      ctx.font = 'bold 16px Arial';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.fillText(`🏁 ${player1.laps}/${TOTAL_LAPS}  -  ${player2.laps}/${TOTAL_LAPS} 🏁`, CENTER_X, 30);
+    }
+
+    function gameLoop() {
+      update();
+      drawTrack();
+      drawCar(player1, true);
+      drawCar(player2, false);
+      drawUI();
+
+      animationId = requestAnimationFrame(gameLoop);
+    }
+
+    function restartGame() {
+      player1.angle = -Math.PI / 2;
+      player1.x = CENTER_X + getTrackMiddleRadius();
+      player1.y = CENTER_Y;
+      player1.speed = 0;
+      player1.laps = 0;
+      player1.checkpointPassed = false;
+
+      player2.angle = Math.PI / 2;
+      player2.x = CENTER_X - getTrackMiddleRadius();
+      player2.y = CENTER_Y;
+      player2.speed = 0;
+      player2.laps = 0;
+      player2.checkpointPassed = false;
+
+      gameActive = true;
+      winnerMessage = '';
+      p1LapSpan.textContent = '0';
+      p2LapSpan.textContent = '0';
+
+      Object.keys(keys).forEach(k => keys[k] = false);
+    }
+
+    function handleKeyDown(e) {
+      const key = e.key;
+      if (key in keys) {
+        e.preventDefault();
+        keys[key] = true;
+      }
+      if (key === 'r' || key === 'R') {
+        e.preventDefault();
+        restartGame();
+      }
+    }
+
+    function handleKeyUp(e) {
+      const key = e.key;
+      if (key in keys) {
+        e.preventDefault();
+        keys[key] = false;
+      }
+    }
+
+    window.addEventListener('keydown', function(e) {
+      if (e.key.startsWith('Arrow')) {
+        e.preventDefault();
+      }
+    }, {passive: false});
+
+    document.getElementById('restartButton').addEventListener('click', restartGame);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    restartGame();
+    if (animationId) cancelAnimationFrame(animationId);
+    animationId = requestAnimationFrame(gameLoop);
+
+    window.addEventListener('beforeunload', () => {
+      if (animationId) cancelAnimationFrame(animationId);
+    });
+  })();
+</script>
+</body>
+</html>
