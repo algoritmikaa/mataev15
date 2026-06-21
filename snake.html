@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Игра Змейка на HTML5</title>
+    <style>
+        /* Стили для красивого оформления */
+        body {
+            background-color: #1a1a1a;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-size: 32px;
+            text-shadow: 0 0 10px #00ff88;
+        }
+
+        #score-board {
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+
+        /* Игровое поле */
+        canvas {
+            background-color: #111;
+            border: 4px solid #00ff88;
+            box-shadow: 0 0 20px #00ff88;
+        }
+
+        #game-over-text {
+            display: none;
+            color: #ff3333;
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 15px;
+            text-shadow: 0 0 10px #ff3333;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ЗМЕЙКА</h1>
+    <div id="score-board">Счёт: <span id="score">0</span></div>
+    
+    <!-- Холст для рисования игры -->
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    
+    <div id="game-over-text">ИГРА ОКОНЧЕНА! Нажмите Пробел для перезапуска</div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreElement = document.getElementById("score");
+        const gameOverText = document.getElementById("game-over-text");
+
+        // Размер одной ячейки (сетки) и их количество
+        const gridSize = 20;
+        const tileCount = canvas.width / gridSize;
+
+        // Скорость игры (миллисекунды между кадрами)
+        const gameSpeed = 100;
+
+        // Координаты змейки (голова на первом месте)
+        let snake = [
+            { x: 10, y: 10 },
+            { x: 9, y: 10 },
+            { x: 8, y: 10 }
+        ];
+
+        // Координаты еды
+        let food = { x: 5, y: 5 };
+
+        // Скорость и направление движения (dx - по горизонтали, dy - по вертикали)
+        let dx = 1;
+        let dy = 0;
+
+        // Переменная для блокировки быстрого двойного нажатия клавиш
+        let changingDirection = false;
+
+        let score = 0;
+        let gameInterval;
+        let isGameOver = false;
+
+        // Запуск основного цикла игры
+        resetGame();
+
+        function main() {
+            if (hasGameEnded()) {
+                isGameOver = true;
+                gameOverText.style.display = "block";
+                clearInterval(gameInterval);
+                return;
+            }
+
+            changingDirection = false;
+            clearCanvas();
+            drawFood();
+            moveSnake();
+            drawSnake();
+        }
+
+        // Очистка игрового поля перед каждым кадром
+        function clearCanvas() {
+            ctx.fillStyle = "#111";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // Отрисовка змейки
+        function drawSnake() {
+            snake.forEach((part, index) => {
+                // Голова змейки чуть ярче, тело — чуть темнее
+                ctx.fillStyle = index === 0 ? "#00ff88" : "#00aa66";
+                ctx.strokeStyle = "#111";
+                
+                ctx.fillRect(part.x * gridSize, part.y * gridSize, gridSize, gridSize);
+                ctx.strokeRect(part.x * gridSize, part.y * gridSize, gridSize, gridSize);
+            });
+        }
+
+        // Движение змейки
+        function moveSnake() {
+            // Создаем новую голову на основе направления движения
+            const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+            snake.unshift(head);
+
+            // Проверяем, съела ли змейка еду
+            const hasEatenFood = snake[0].x === food.x && snake[0].y === food.y;
+            if (hasEatenFood) {
+                score += 10;
+                scoreElement.innerText = score;
+                generateFood();
+            } else {
+                // Если еду не съели, удаляем хвост (имитируем движение вперед)
+                snake.pop();
+            }
+        }
+
+        // Генерация еды в случайном месте
+        function generateFood() {
+            food.x = Math.floor(Math.random() * tileCount);
+            food.y = Math.floor(Math.random() * tileCount);
+
+            // Если еда появилась внутри змейки, перегенерируем её
+            snake.forEach(part => {
+                const hasEaten = part.x === food.x && part.y === food.y;
+                if (hasEaten) generateFood();
+            });
+        }
+
+        // Отрисовка еды
+        function drawFood() {
+            ctx.fillStyle = "#ff3333";
+            ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize, gridSize);
+        }
+
+        // Проверка на проигрыш (столкновение со стенами или хвостом)
+        function hasGameEnded() {
+            // Столкновение с хвостом
+            for (let i = 4; i < snake.length; i++) {
+                if (snake[i].x === snake[0].x && snake[i].y === snake[0].y) return true;
+            }
+
+            // Столкновение со стенами
+            const hitLeftWall = snake[0].x < 0;
+            const hitRightWall = snake[0].x >= tileCount;
+            const hitToptWall = snake[0].y < 0;
+            const hitBottomWall = snake[0].y >= tileCount;
+
+            return hitLeftWall || hitRightWall || hitToptWall || hitBottomWall;
+        }
+
+        // Обработка нажатий клавиш (управление)
+        document.addEventListener("keydown", changeDirection);
+
+        function changeDirection(event) {
+            const keyPressed = event.keyCode;
+
+            // Коды клавиш управления
+            const LEFT_KEY = 37;
+            const UP_KEY = 38;
+            const RIGHT_KEY = 39;
+            const DOWN_KEY = 40;
+            const SPACE_KEY = 32;
+
+            // Если игра окончена и нажат Пробел — перезапускаем
+            if (isGameOver && keyPressed === SPACE_KEY) {
+                resetGame();
+                return;
+            }
+
+            if (changingDirection) return;
+
+            const goingUp = dy === -1;
+            const goingDown = dy === 1;
+            const goingRight = dx === 1;
+            const goingLeft = dx === -1;
+
+            // Меняем направление движения, запрещая разворот на 180 градусов
+            if (keyPressed === LEFT_KEY && !goingRight) {
+                dx = -1; dy = 0;
+                changingDirection = true;
+            }
+            if (keyPressed === UP_KEY && !goingDown) {
+                dx = 0; dy = -1;
+                changingDirection = true;
+            }
+            if (keyPressed === RIGHT_KEY && !goingLeft) {
+                dx = 1; dy = 0;
+                changingDirection = true;
+            }
+            if (keyPressed === DOWN_KEY && !goingUp) {
+                dx = 0; dy = 1;
+                changingDirection = true;
+            }
+        }
+
+        // Сброс и перезапуск игры
+        function resetGame() {
+            snake = [
+                { x: 10, y: 10 },
+                { x: 9, y: 10 },
+                { x: 8, y: 10 }
+            ];
+            dx = 1;
+            dy = 0;
+            score = 0;
+            isGameOver = false;
+            scoreElement.innerText = score;
+            gameOverText.style.display = "none";
+            generateFood();
+            clearInterval(gameInterval);
+            gameInterval = setInterval(main, gameSpeed);
+        }
+    </script>
+</body>
+</html>
